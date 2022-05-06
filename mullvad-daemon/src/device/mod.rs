@@ -862,6 +862,35 @@ impl DeviceCacher {
         let _ = tokio::task::spawn_blocking(move || drop(std_file)).await;
     }
 }
+
+pub async fn remove_device(
+    device_service: DeviceService,
+    account_token: AccountToken,
+    device_id: DeviceId,
+) -> Result<(Device, Vec<Device>), Error> {
+    let mut devices = device_service.list_devices(account_token.clone()).await?;
+    device_service
+        .remove_device(account_token, device_id.clone())
+        .await?;
+    if let Some(index) = devices.iter().position(|device| device.id == device_id) {
+        Ok((devices.swap_remove(index), devices))
+    } else {
+        // You would only end up here if the API service successfully removed a device that
+        // was previously not included in the list returned by it, which should be impossible.
+        // Just return a bogus device in its place.
+        log::error!("List did not contain the revoked device");
+        Ok((
+            Device {
+                id: device_id,
+                name: "unknown device".to_string(),
+                pubkey: talpid_types::net::wireguard::PublicKey::from([0u8; 32]),
+                ports: vec![],
+            },
+            devices,
+        ))
+    }
+}
+
 /// Checks if the current device is valid if a WireGuard tunnel cannot be set up
 /// after multiple attempts.
 pub(crate) struct TunnelStateChangeHandler {
